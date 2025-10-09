@@ -85,7 +85,7 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
               onChange={(e) => setStudentClass(e.target.value)}
               required
               className="bg-muted border-border text-foreground"
-              placeholder="e.g., 3rd Secondary"
+              placeholder="Enter your class"
             />
           </div>
           <div className="space-y-2">

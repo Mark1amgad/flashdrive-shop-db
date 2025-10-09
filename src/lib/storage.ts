@@ -20,7 +20,7 @@ const initialProducts: Product[] = [
   {
     id: "3",
     name: "Redragon Flashdrive 32GB",
-    price: 135,
+    price: 140,
     image: "image3.jpg",
   },
 ];

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,25 +6,69 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
-
-// Admin credentials (hardcoded for simplicity - can be changed in code)
-const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "donbosco2024";
+import { supabase } from "@/integrations/supabase/client";
 
 const AdminLogin = () => {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    // Check if user is already logged in
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // Check if user has admin role
+        const { data: roles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", session.user.id)
+          .eq("role", "admin")
+          .single();
+        
+        if (roles) {
+          navigate("/admin/dashboard");
+        }
+      }
+    };
+    checkAuth();
+  }, [navigate]);
 
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-      localStorage.setItem("admin_logged_in", "true");
-      toast.success("Login successful!");
-      navigate("/admin/dashboard");
-    } else {
-      toast.error("Invalid credentials");
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (data.session) {
+        // Check if user has admin role
+        const { data: roles, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", data.session.user.id)
+          .eq("role", "admin")
+          .single();
+
+        if (roleError || !roles) {
+          await supabase.auth.signOut();
+          toast.error("Access denied. Admin privileges required.");
+          return;
+        }
+
+        toast.success("Login successful!");
+        navigate("/admin/dashboard");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,17 +85,17 @@ const AdminLogin = () => {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="username" className="text-foreground">
-              Username
+            <Label htmlFor="email" className="text-foreground">
+              Email
             </Label>
             <Input
-              id="username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
               className="bg-muted border-border text-foreground"
-              placeholder="Enter username"
+              placeholder="admin@example.com"
             />
           </div>
 
@@ -72,9 +116,10 @@ const AdminLogin = () => {
 
           <Button
             type="submit"
+            disabled={loading}
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan transition-smooth font-semibold"
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </Button>
         </form>
 

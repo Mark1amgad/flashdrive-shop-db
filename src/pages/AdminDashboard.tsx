@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Product, Purchase } from "@/types/product";
-import { getProducts, saveProducts, getPurchases, exportPurchasesToCSV } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,30 +29,110 @@ const AdminDashboard = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [productForm, setProductForm] = useState({ name: "", price: 0, image: "" });
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem("admin_logged_in");
-    if (!isLoggedIn) {
-      navigate("/admin/login");
-      return;
-    }
-    loadData();
+    checkAuthAndLoadData();
   }, [navigate]);
 
-  const loadData = () => {
-    setProducts(getProducts());
-    setPurchases(getPurchases());
+  const checkAuthAndLoadData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        navigate("/admin/login");
+        return;
+      }
+
+      // Check if user has admin role
+      const { data: roles, error: roleError } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin")
+        .single();
+
+      if (roleError || !roles) {
+        toast.error("Access denied. Admin privileges required.");
+        await supabase.auth.signOut();
+        navigate("/admin/login");
+        return;
+      }
+
+      await loadData();
+    } catch (error) {
+      console.error("Auth check failed:", error);
+      navigate("/admin/login");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("admin_logged_in");
+  const loadData = async () => {
+    try {
+      // Load products from database
+      const { data: productsData, error: productsError } = await supabase
+        .from("products")
+        .select("*")
+        .order("id", { ascending: true });
+
+      if (productsError) throw productsError;
+      
+      const formattedProducts = productsData.map(p => ({
+        id: p.id.toString(),
+        name: p.name,
+        price: Number(p.price),
+        image: p.image,
+      }));
+      
+      setProducts(formattedProducts);
+
+      // Load orders from database
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
+        .select(`
+          *,
+          products (name, price)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (ordersError) throw ordersError;
+      
+      const formattedPurchases = ordersData.map(o => ({
+        id: o.id.toString(),
+        buyerName: o.buyer_name,
+        class: o.class,
+        studentNumber: o.number,
+        productName: o.products?.name || 'Unknown',
+        price: Number(o.products?.price || 0),
+        date: new Date(o.date).toLocaleString(),
+      }));
+      
+      setPurchases(formattedPurchases);
+    } catch (error: any) {
+      toast.error("Failed to load data: " + error.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     toast.success("Logged out successfully");
     navigate("/admin/login");
   };
 
   const handleExportCSV = () => {
-    const csv = exportPurchasesToCSV();
+    const headers = ["Buyer Name", "Class", "Student Number", "Product Name", "Price", "Date/Time"];
+    const rows = purchases.map((p) => [
+      p.buyerName,
+      p.class,
+      p.studentNumber,
+      p.productName,
+      `${p.price} EGP`,
+      p.date,
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -62,45 +142,78 @@ const AdminDashboard = () => {
     toast.success("CSV exported successfully");
   };
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!productForm.name || !productForm.price) {
       toast.error("Please fill all fields");
       return;
     }
 
-    const newProduct: Product = {
-      id: Date.now().toString(),
-      name: productForm.name,
-      price: productForm.price,
-      image: productForm.image || "placeholder.jpg",
-    };
+    try {
+      const { error } = await supabase
+        .from("products")
+        .insert({
+          name: productForm.name,
+          price: productForm.price,
+          image: productForm.image || "placeholder.jpg",
+        });
 
-    const updatedProducts = [...products, newProduct];
-    saveProducts(updatedProducts);
-    setProducts(updatedProducts);
-    setIsAddingProduct(false);
-    setProductForm({ name: "", price: 0, image: "" });
-    toast.success("Product added successfully");
+      if (error) throw error;
+
+      setProductForm({ name: "", price: 0, image: "" });
+      setIsAddingProduct(false);
+      toast.success("Product added successfully");
+      await loadData();
+    } catch (error: any) {
+      toast.error("Failed to add product: " + error.message);
+    }
   };
 
-  const handleEditProduct = () => {
+  const handleEditProduct = async () => {
     if (!editingProduct) return;
 
-    const updatedProducts = products.map((p) =>
-      p.id === editingProduct.id ? editingProduct : p
-    );
-    saveProducts(updatedProducts);
-    setProducts(updatedProducts);
-    setEditingProduct(null);
-    toast.success("Product updated successfully");
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({
+          name: editingProduct.name,
+          price: editingProduct.price,
+          image: editingProduct.image,
+        })
+        .eq("id", parseInt(editingProduct.id));
+
+      if (error) throw error;
+
+      setEditingProduct(null);
+      toast.success("Product updated successfully");
+      await loadData();
+    } catch (error: any) {
+      toast.error("Failed to update product: " + error.message);
+    }
   };
 
-  const handleDeleteProduct = (id: string) => {
-    const updatedProducts = products.filter((p) => p.id !== id);
-    saveProducts(updatedProducts);
-    setProducts(updatedProducts);
-    toast.success("Product deleted successfully");
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("products")
+        .delete()
+        .eq("id", parseInt(id));
+
+      if (error) throw error;
+
+      toast.success("Product deleted successfully");
+      await loadData();
+    } catch (error: any) {
+      toast.error("Failed to delete product: " + error.message);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    );
+  }
 
   const totalRevenue = purchases.reduce((sum, p) => sum + p.price, 0);
   const productStats = products.map((product) => ({

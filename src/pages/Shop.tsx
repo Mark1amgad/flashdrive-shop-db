@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { Product } from "@/types/product";
-import { getProducts } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
 import { ProductCard } from "@/components/ProductCard";
 import { BuyModal } from "@/components/BuyModal";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 const Shop = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -14,8 +15,31 @@ const Shop = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    setProducts(getProducts());
+    loadProducts();
   }, []);
+
+  const loadProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("available", true)
+        .order("id", { ascending: true });
+
+      if (error) throw error;
+      
+      const formattedProducts = data.map(p => ({
+        id: p.id.toString(),
+        name: p.name,
+        price: Number(p.price),
+        image: p.image,
+      }));
+      
+      setProducts(formattedProducts);
+    } catch (error: any) {
+      toast.error("Failed to load products: " + error.message);
+    }
+  };
 
   const handleBuyClick = (product: Product) => {
     setSelectedProduct(product);

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Product, Purchase } from "@/types/product";
-import { savePurchase } from "@/lib/storage";
+import { Product } from "@/types/product";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,33 +23,52 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
   const [buyerName, setBuyerName] = useState("");
   const [studentClass, setStudentClass] = useState("");
   const [studentNumber, setStudentNumber] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!product) return;
 
-    const purchase: Purchase = {
-      id: Date.now().toString(),
-      buyerName,
-      class: studentClass,
-      studentNumber,
-      productName: product.name,
-      price: product.price,
-      date: new Date().toLocaleString(),
-    };
+    setLoading(true);
 
-    savePurchase(purchase);
-    
-    toast.success("Thank you for your purchase!", {
-      description: `${product.name} - ${product.price} EGP`,
-    });
+    try {
+      // First check if user is authenticated, if not, sign in anonymously
+      let { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        // Create anonymous session for purchase
+        const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
+        if (authError) throw authError;
+        session = authData.session;
+      }
 
-    // Reset form
-    setBuyerName("");
-    setStudentClass("");
-    setStudentNumber("");
-    onClose();
+      // Insert order into database
+      const { error } = await supabase
+        .from("orders")
+        .insert({
+          buyer_name: buyerName,
+          class: studentClass,
+          number: studentNumber,
+          product_id: parseInt(product.id),
+        });
+
+      if (error) throw error;
+      
+      toast.success("Thank you for your purchase!", {
+        description: `${product.name} - ${product.price} EGP`,
+      });
+
+      // Reset form
+      setBuyerName("");
+      setStudentClass("");
+      setStudentNumber("");
+      onClose();
+    } catch (error: any) {
+      toast.error("Purchase failed: " + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -103,9 +122,10 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
           </div>
           <Button
             type="submit"
+            disabled={loading}
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan transition-smooth font-semibold"
           >
-            Confirm Purchase
+            {loading ? "Processing..." : "Confirm Purchase"}
           </Button>
         </form>
       </DialogContent>

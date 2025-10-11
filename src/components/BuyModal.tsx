@@ -12,6 +12,28 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { z } from "zod";
+
+const orderSchema = z.object({
+  buyerName: z.string()
+    .trim()
+    .min(2, 'Name must be at least 2 characters')
+    .max(100, 'Name too long')
+    .regex(/^[a-zA-Z\s'-]+$/, 'Name contains invalid characters'),
+  class: z.string()
+    .trim()
+    .min(1, 'Class is required')
+    .max(20, 'Class name too long')
+    .regex(/^[0-9]{1,2}[A-Z]?$/, 'Invalid class format (e.g., 10A, 9)'),
+  studentNumber: z.string()
+    .trim()
+    .regex(/^[0-9]+$/, 'Student number must be numeric')
+    .min(1, 'Student number required')
+    .max(10, 'Invalid student number')
+});
+
+const RATE_LIMIT_KEY = 'last_purchase_time';
+const MIN_INTERVAL_MS = 60000; // 1 minute between purchases
 
 interface BuyModalProps {
   product: Product | null;
@@ -30,9 +52,31 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
 
     if (!product) return;
 
+    // Check rate limit
+    const lastPurchase = localStorage.getItem(RATE_LIMIT_KEY);
+    if (lastPurchase && Date.now() - parseInt(lastPurchase) < MIN_INTERVAL_MS) {
+      toast.error('Please wait before making another purchase', {
+        description: 'You can make one purchase per minute'
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
+      // Validate input data
+      const validation = orderSchema.safeParse({
+        buyerName,
+        class: studentClass,
+        studentNumber
+      });
+
+      if (!validation.success) {
+        toast.error(validation.error.errors[0].message);
+        setLoading(false);
+        return;
+      }
+
       // First check if user is authenticated, if not, sign in anonymously
       let { data: { session } } = await supabase.auth.getSession();
       
@@ -43,17 +87,20 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
         session = authData.session;
       }
 
-      // Insert order into database
+      // Insert order into database with validated data
       const { error } = await supabase
         .from("orders")
         .insert({
-          buyer_name: buyerName,
-          class: studentClass,
-          number: studentNumber,
+          buyer_name: validation.data.buyerName,
+          class: validation.data.class,
+          number: validation.data.studentNumber,
           product_id: parseInt(product.id),
         });
 
       if (error) throw error;
+      
+      // Update rate limit timestamp
+      localStorage.setItem(RATE_LIMIT_KEY, Date.now().toString());
       
       toast.success("Thank you for your purchase!", {
         description: `${product.name} - ${product.price} EGP`,
@@ -90,6 +137,7 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
               value={buyerName}
               onChange={(e) => setBuyerName(e.target.value)}
               required
+              maxLength={100}
               className="bg-muted border-border text-foreground"
               placeholder="Enter your full name"
             />
@@ -103,8 +151,9 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
               value={studentClass}
               onChange={(e) => setStudentClass(e.target.value)}
               required
+              maxLength={20}
               className="bg-muted border-border text-foreground"
-              placeholder="Enter your class"
+              placeholder="Enter your class (e.g., 10A)"
             />
           </div>
           <div className="space-y-2">
@@ -116,6 +165,7 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
               value={studentNumber}
               onChange={(e) => setStudentNumber(e.target.value)}
               required
+              maxLength={10}
               className="bg-muted border-border text-foreground"
               placeholder="Enter your number"
             />

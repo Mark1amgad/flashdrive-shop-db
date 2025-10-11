@@ -12,6 +12,7 @@ const AdminLogin = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,6 +35,33 @@ const AdminLogin = () => {
     };
     checkAuth();
   }, [navigate]);
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/admin/login`
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        toast.success("Account created! Please contact admin to get admin privileges.");
+        setIsSignUp(false);
+        setPassword("");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Sign up failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,11 +107,13 @@ const AdminLogin = () => {
           <div className="inline-block p-4 bg-primary/10 rounded-full mb-4">
             <ShieldCheck className="w-12 h-12 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Admin Login</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">
+            {isSignUp ? "Admin Sign Up" : "Admin Login"}
+          </h1>
           <p className="text-muted-foreground">Product Management Dashboard</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="email" className="text-foreground">
               Email
@@ -119,11 +149,20 @@ const AdminLogin = () => {
             disabled={loading}
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan transition-smooth font-semibold"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? (isSignUp ? "Creating Account..." : "Logging in...") : (isSignUp ? "Sign Up" : "Login")}
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-6 text-center space-y-4">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="text-primary hover:text-primary/80"
+          >
+            {isSignUp ? "Already have an account? Login" : "Need an account? Sign Up"}
+          </Button>
+          
           <Button
             variant="ghost"
             onClick={() => navigate("/")}

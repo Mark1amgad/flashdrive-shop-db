@@ -20,6 +20,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { LogOut, Download, Plus, Edit, Trash2, DollarSign, ShoppingBag } from "lucide-react";
 
@@ -30,6 +40,7 @@ const AdminDashboard = () => {
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [productForm, setProductForm] = useState({ name: "", price: 0, image: "" });
   const [loading, setLoading] = useState(true);
+  const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -207,6 +218,23 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleDeletePurchase = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", parseInt(id));
+
+      if (error) throw error;
+
+      toast.success("Purchase deleted successfully");
+      setDeletingPurchaseId(null);
+      await loadData();
+    } catch (error: any) {
+      toast.error("Failed to delete purchase: " + error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -360,6 +388,7 @@ const AdminDashboard = () => {
                   <TableHead className="text-foreground">Product</TableHead>
                   <TableHead className="text-foreground">Price</TableHead>
                   <TableHead className="text-foreground">Date/Time</TableHead>
+                  <TableHead className="text-foreground">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -371,6 +400,16 @@ const AdminDashboard = () => {
                     <TableCell className="text-foreground">{purchase.productName}</TableCell>
                     <TableCell className="text-primary font-semibold">{purchase.price} EGP</TableCell>
                     <TableCell className="text-muted-foreground">{purchase.date}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDeletingPurchaseId(purchase.id)}
+                        className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -473,6 +512,29 @@ const AdminDashboard = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Purchase Confirmation */}
+      <AlertDialog open={!!deletingPurchaseId} onOpenChange={() => setDeletingPurchaseId(null)}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">Are you sure you want to delete this purchase?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              This action cannot be undone. This will permanently delete the purchase record from the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-muted text-foreground hover:bg-muted/80">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deletingPurchaseId && handleDeletePurchase(deletingPurchaseId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

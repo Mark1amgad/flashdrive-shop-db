@@ -23,6 +23,7 @@ export type Database = {
           id: number
           number: string
           product_id: number
+          user_id: string | null
         }
         Insert: {
           buyer_name: string
@@ -32,6 +33,7 @@ export type Database = {
           id?: number
           number: string
           product_id: number
+          user_id?: string | null
         }
         Update: {
           buyer_name?: string
@@ -41,6 +43,7 @@ export type Database = {
           id?: number
           number?: string
           product_id?: number
+          user_id?: string | null
         }
         Relationships: [
           {

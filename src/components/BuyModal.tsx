@@ -95,6 +95,7 @@ export const BuyModal = ({ product, open, onClose }: BuyModalProps) => {
           class: validation.data.class,
           number: validation.data.studentNumber,
           product_id: parseInt(product.id),
+          user_id: session?.user?.id,
         });
 
       if (error) throw error;
